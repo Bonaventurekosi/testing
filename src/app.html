@@ -1,0 +1,434 @@
+<title>Donated Tissue Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a microscope stage (dark, sticky) beside a specimen card; palette taken from H&E stain — eosin pink for matrix, hematoxylin violet for cells. */
+:root{
+  --bg:#f2f0f6; --surface:#ffffff; --ink:#221a33; --muted:#625a76; --line:#dbd5e5;
+  --eosin:#b83a72; --hema:#4a3a9c; --stage:#130f22; --stage-2:#231b3d; --stage-ink:#ece8f7; --stage-line:#3a3158;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0f0c1a; --surface:#191428; --ink:#ece8f7; --muted:#a79fbd; --line:#2f2846;
+  --eosin:#f08ab5; --hema:#ac9ef7; --stage:#07050f; --stage-2:#1a1430; --stage-ink:#ece8f7; --stage-line:#3a3158; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#0f0c1a; --surface:#191428; --ink:#ece8f7; --muted:#a79fbd; --line:#2f2846;
+  --eosin:#f08ab5; --hema:#ac9ef7; --stage:#07050f; --stage-2:#1a1430; --stage-ink:#ece8f7; --stage-line:#3a3158; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 40px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:22px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--eosin);outline-offset:2px}
+
+header{display:flex;flex-direction:column;gap:8px;max-width:62ch}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--eosin)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,5vw,46px);line-height:1.05;margin:0;text-wrap:balance;letter-spacing:-.01em}
+header p{margin:0;color:var(--muted)}
+
+.tabs{display:flex;flex-wrap:wrap;gap:4px 22px;border-bottom:1px solid var(--line)}
+.tab{background:none;border:0;padding:10px 0 12px;display:flex;align-items:center;gap:8px;
+  font-family:var(--display);font-weight:500;font-size:19px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
+.tab i{width:10px;height:10px;border-radius:50%;flex:none}
+.tab:hover{color:var(--ink)}
+.tab[aria-current="true"]{color:var(--ink);border-bottom-color:var(--eosin)}
+
+.work{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:28px;align-items:start}
+.stage{position:sticky;top:calc(16px + env(safe-area-inset-top,0px));height:min(74vh,660px);min-height:340px;
+  border-radius:14px;overflow:hidden;border:1px solid var(--stage-line);color:var(--stage-ink);
+  background:radial-gradient(ellipse at 50% 42%,var(--stage-2),var(--stage) 72%)}
+.stage canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.stage canvas:active{cursor:grabbing}
+.hud{position:absolute;display:flex;gap:8px;align-items:center;pointer-events:none}
+.hud>*{pointer-events:auto}
+.hud.tl{top:12px;left:12px}.hud.tr{top:12px;right:12px}
+.hud.bl{bottom:12px;left:12px;right:12px;justify-content:space-between;flex-wrap:wrap;gap:6px 12px}
+.seg{display:flex;border:1px solid var(--stage-line);border-radius:999px;overflow:hidden;background:var(--stage)}
+.seg button{background:none;border:0;padding:7px 13px;font-size:13.5px;font-weight:500;color:var(--stage-ink);opacity:.72}
+.seg button[aria-pressed="true"]{background:var(--stage-ink);color:var(--stage);opacity:1}
+.ghost{background:var(--stage);border:1px solid var(--stage-line);border-radius:999px;padding:7px 12px;font-size:13px;color:var(--stage-ink)}
+.chip{font-family:var(--mono);font-size:12px;background:var(--stage);border:1px solid var(--stage-line);border-radius:6px;padding:4px 8px}
+.hint{font-size:12px;opacity:.7}
+.nogl{position:absolute;inset:0;display:grid;place-items:center;padding:60px 24px;text-align:center;pointer-events:none}
+
+.card{display:flex;flex-direction:column;gap:22px;min-width:0}
+.card h2{font-family:var(--display);font-weight:700;font-size:clamp(26px,3.4vw,34px);line-height:1.1;margin:0;text-wrap:balance}
+.lede{margin:6px 0 0;font-size:17px;max-width:60ch}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-block:1px solid var(--line);margin:0}
+.facts div{padding:12px 12px 12px 0;min-width:0}
+.facts div+div{padding-left:12px;border-left:1px solid var(--line)}
+.facts dt{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.facts dd{margin:3px 0 0;font-weight:600;font-size:15px;line-height:1.3;overflow-wrap:anywhere}
+section{display:flex;flex-direction:column;gap:8px}
+h3{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--hema);margin:0}
+section p{margin:0;max-width:62ch}
+.modeNote{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:15px}
+.modeNote b{color:var(--eosin)}
+.parts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.part{width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:11px 6px;
+  display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:2px 12px;align-items:start;border-radius:0}
+.parts li:last-child .part{border-bottom:1px solid var(--line)}
+.part i{width:14px;height:14px;border-radius:4px;margin-top:5px}
+.part strong{font-weight:600}
+.part span.d{grid-column:2;color:var(--muted);font-size:14.5px;line-height:1.45}
+.part em{font-style:normal;font-family:var(--mono);font-size:11px;letter-spacing:.04em;border:1px solid var(--line);border-radius:999px;padding:2px 8px;color:var(--muted);white-space:nowrap;margin-top:2px}
+.part em.kept{color:var(--eosin);border-color:var(--eosin)}
+.part:hover{background:var(--surface)}
+.part[aria-pressed="true"]{background:var(--surface);box-shadow:inset 3px 0 0 var(--eosin)}
+.part.gone strong{text-decoration:line-through;text-decoration-color:var(--muted)}
+.tip{font-size:13.5px;color:var(--muted)}
+ul.uses{margin:0;padding-left:20px;max-width:60ch}
+ul.uses li{margin:2px 0}
+footer{border-top:1px solid var(--line);padding-top:16px;color:var(--muted);font-size:13.5px;max-width:80ch}
+footer p{margin:0 0 6px}
+
+@media (max-width:860px){
+  .work{grid-template-columns:minmax(0,1fr);gap:20px}
+  .stage{position:relative;top:0;height:56vh;min-height:320px}
+  .tab{font-size:17px}
+  .hint{display:none}
+}
+@media (max-width:460px){ .tabs{gap:4px 12px} .tab{font-size:15px;gap:6px} .tab i{width:8px;height:8px} .seg button{padding:7px 10px;font-size:12.5px} .ghost{padding:7px 10px;font-size:12.5px} .hud.tr{gap:6px} .facts{grid-template-columns:1fr} .facts div+div{border-left:0;border-top:1px solid var(--line);padding-left:0} }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Skin · fat · placenta</span>
+    <h1>What is inside donated tissue?</h1>
+    <p>Dermis, adipose, amnion and chorion are four human tissues that tissue banks such as MTF Biologics prepare as grafts. Pick one, turn it around, and see what it is built from and why it helps the body heal.</p>
+  </header>
+
+  <nav class="tabs" id="tabs" aria-label="Tissue type"></nav>
+
+  <div class="work">
+    <div class="stage" id="stage">
+      <canvas id="gl" tabindex="0" aria-label="3D model of the selected tissue. Drag or use arrow keys to rotate, plus and minus to zoom."></canvas>
+      <div class="hud tl">
+        <div class="seg" role="group" aria-label="Show tissue as">
+          <button id="mNative" aria-pressed="true">In the body</button>
+          <button id="mGraft" aria-pressed="false">As a graft</button>
+        </div>
+      </div>
+      <div class="hud tr">
+        <button class="ghost" id="spin" aria-pressed="true">Pause</button>
+        <button class="ghost" id="reset">Reset view</button>
+      </div>
+      <div class="hud bl">
+        <span class="chip" id="scale"></span>
+        <span class="hint">Drag to rotate · scroll or pinch to zoom</span>
+      </div>
+    </div>
+
+    <article class="card" id="card" aria-live="polite"></article>
+  </div>
+
+  <footer>
+    <p>The 3D models are simplified teaching diagrams. Sizes and proportions are exaggerated so each layer can be seen; they are not to scale.</p>
+    <p>This is an independent educational page. It is not produced by or affiliated with MTF Biologics, and it is not medical advice. For product details, ask your surgeon or see the tissue bank's own materials.</p>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+/* ---------- content ---------- */
+var C={collagen:"#e879a6",fine:"#f6aac8",elastin:"#f2c14e",cell:"#b9a4ff",nucleus:"#5b3fd1",vessel:"#e5484d",
+       lipid:"#f6d365",membrane:"#8f7cf0",gel:"#6fb7d9",tropho:"#c58be0",epi:"#f0b6d0"};
+var TISSUES=[
+ {id:"dermis",name:"Dermis",dot:C.collagen,cam:17,
+  title:"Dermis, the strong layer of skin",
+  lede:"The dermis sits under the thin outer skin. It is a dense weave of collagen and elastin, and it is what makes skin tough and stretchy.",
+  facts:[["Thickness","About 1–4 mm"],["Main proteins","Collagen I and III, elastin"],["Donated by","Deceased donors"]],
+  scale:"Collagen bundle ≈ 2–15 µm thick",
+  native:"<b>In the body:</b> living cells called fibroblasts sit inside the weave and keep rebuilding it. Blood vessels run through to feed the skin.",
+  graft:"<b>As a graft:</b> the donor's cells are washed out so the patient's immune system has little to react to. The collagen and elastin weave stays, and so do the empty vessel channels. The patient's own cells and blood vessels move in and make it their own tissue. This is called an acellular dermal matrix.",
+  uses:["Rebuilding the breast after mastectomy","Reinforcing hernia and abdominal wall repairs","Covering burns and deep wounds","Strengthening tendon repairs such as the rotator cuff","Gum and soft-tissue grafts in dental surgery"],
+  parts:[
+   {key:"bm",name:"Basement membrane",color:C.membrane,proc:"keep",d:"A thin wavy sheet on top where the outer skin used to attach. New skin cells grip onto it."},
+   {key:"pap",name:"Fine collagen (upper dermis)",color:C.fine,proc:"keep",d:"Thin, loose fibers just under the surface."},
+   {key:"ret",name:"Thick collagen bundles (deep dermis)",color:C.collagen,proc:"keep",d:"Heavy ropes of collagen woven in every direction. They give skin its strength."},
+   {key:"ela",name:"Elastin fibers",color:C.elastin,proc:"keep",d:"Springy threads that let skin snap back after stretching."},
+   {key:"fib",name:"Fibroblasts",color:C.cell,proc:"remove",d:"The cells that make and repair collagen."},
+   {key:"ves",name:"Blood vessels",color:C.vessel,proc:"ghost",tag:"Channels remain",d:"Small vessels that carry blood through the skin."}
+  ]},
+ {id:"adipose",name:"Adipose",dot:C.lipid,cam:16,
+  title:"Adipose, the body's soft padding",
+  lede:"Adipose is fat tissue. It cushions, insulates and stores energy. Each fat cell is a large droplet of oil held in a thin protein basket.",
+  facts:[["Fat cell size","50–150 µm across"],["Main proteins","Collagen IV and VI, laminin"],["Donated by","Deceased donors"]],
+  scale:"Fat cell ≈ 50–150 µm across",
+  native:"<b>In the body:</b> fat cells pack together like bubbles. Fine capillaries and small support cells sit in the gaps between them.",
+  graft:"<b>As a graft:</b> the oil and the donor's cells are removed. What is left is the honeycomb of empty baskets, called an adipose matrix. Placed where padding has been lost, it gives the patient's own fat cells a framework to grow into.",
+  uses:["Restoring lost padding under the foot","Filling soft-tissue dents and contour defects","Restoring volume in the face and hands","An off-the-shelf option when a patient has little fat of their own to move"],
+  parts:[
+   {key:"adi",name:"Fat cells (adipocytes)",color:C.lipid,proc:"remove",d:"One big oil droplet fills each cell and pushes its nucleus flat against the edge."},
+   {key:"bas",name:"Protein basket",color:C.collagen,proc:"keep",d:"A thin mesh of collagen and laminin around every cell. It holds the tissue's shape."},
+   {key:"cap",name:"Capillaries",color:C.vessel,proc:"remove",d:"Fat is rich in blood supply. Tiny vessels thread between the cells."},
+   {key:"str",name:"Stromal cells",color:C.cell,proc:"remove",d:"Small support cells, including young cells that can become new fat cells."}
+  ]},
+ {id:"amnion",name:"Amnion",dot:C.epi,cam:17,
+  title:"Amnion, the inner lining around the baby",
+  lede:"The amnion is the innermost layer of the sac that holds a baby before birth. It is thin, clear and tough, with no blood vessels or nerves.",
+  facts:[["Thickness","0.02–0.5 mm"],["Blood vessels","None"],["Donated by","Mothers, after planned C-section"]],
+  scale:"Whole membrane ≈ 20–500 µm thick",
+  native:"<b>In the body:</b> a single sheet of cells faces the baby. Beneath it are layers of collagen, from tightly packed to soft and spongy.",
+  graft:"<b>As a graft:</b> the membrane is cleaned and usually dried so it can be stored on a shelf. Its cells are no longer living, but the collagen layers and the natural proteins they hold stay in place. Laid on a wound, it acts as a protective cover and a scaffold for the patient's own cells.",
+  uses:["Covering slow-healing wounds such as diabetic foot ulcers","Repairing the surface of the eye","Wrapping tendons and nerves as a barrier after surgery","Covering burns"],
+  parts:[
+   {key:"epi",name:"Epithelium",color:C.epi,proc:"ghost",tag:"Not living",d:"One layer of box-shaped cells. This side faced the baby."},
+   {key:"bm",name:"Basement membrane",color:C.membrane,proc:"keep",d:"A thin, strong sheet of collagen IV and laminin. Cells attach and spread on it easily."},
+   {key:"com",name:"Compact layer",color:C.collagen,proc:"keep",d:"Tightly packed collagen. This layer gives the amnion most of its strength."},
+   {key:"fibL",name:"Fibroblast layer",color:C.fine,proc:"keep",d:"A looser net of collagen fibers."},
+   {key:"fib",name:"Fibroblasts",color:C.cell,proc:"ghost",tag:"Not living",d:"Scattered cells that built the collagen layers."},
+   {key:"spo",name:"Spongy layer",color:C.gel,proc:"keep",d:"A soft, water-holding gel that let the amnion slide against the chorion."}
+  ]},
+ {id:"chorion",name:"Chorion",dot:C.tropho,cam:17,
+  title:"Chorion, the outer layer of the sac",
+  lede:"The chorion wraps around the amnion and faced the wall of the womb. It is several times thicker than the amnion and has more cells.",
+  facts:[["Thickness","About 3–4× the amnion"],["Main proteins","Collagen I, III, IV, V, VI"],["Donated by","Mothers, after planned C-section"]],
+  scale:"Roughly 3–4× thicker than amnion",
+  native:"<b>In the body:</b> a thick net of collagen sits on the amnion side. Below it, several rows of cells called trophoblasts faced the mother.",
+  graft:"<b>As a graft:</b> the chorion is often kept together with the amnion to make a thicker membrane that is easier to handle. After cleaning and drying its cells are no longer living, while the collagen net and natural proteins remain.",
+  uses:["Thicker wound coverings, usually paired with amnion","Deeper or larger chronic wounds","Surgical barrier and wrap applications"],
+  parts:[
+   {key:"ret",name:"Reticular layer",color:C.collagen,proc:"keep",d:"A thick, open net of collagen. It makes up most of the chorion and faced the amnion."},
+   {key:"fib",name:"Fibroblasts",color:C.cell,proc:"ghost",tag:"Not living",d:"Cells spread through the collagen net."},
+   {key:"bm",name:"Basement membrane",color:C.membrane,proc:"keep",d:"A thin sheet that anchors the cell layer to the collagen."},
+   {key:"tro",name:"Trophoblast layer",color:C.tropho,proc:"ghost",tag:"Not living",d:"Several rows of rounded cells. This side faced the mother."}
+  ]}
+];
+
+/* ---------- DOM ---------- */
+var $=function(id){return document.getElementById(id)};
+var tabs=$("tabs"),card=$("card"),stage=$("stage"),canvas=$("gl");
+var state={t:TISSUES[0],graft:false,hl:null};
+TISSUES.forEach(function(t){
+  var b=document.createElement("button");b.className="tab";b.id="tab-"+t.id;
+  b.innerHTML='<i style="background:'+t.dot+'"></i>'+t.name;
+  b.onclick=function(){select(t.id,true)};tabs.appendChild(b);
+});
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+function renderCard(){
+  var t=state.t,g=state.graft;
+  var h='<div><h2>'+esc(t.title)+'</h2><p class="lede">'+esc(t.lede)+'</p></div>';
+  h+='<dl class="facts">'+t.facts.map(function(f){return '<div><dt>'+esc(f[0])+'</dt><dd>'+esc(f[1])+'</dd></div>'}).join("")+'</dl>';
+  h+='<div class="modeNote">'+(g?t.graft:t.native)+'</div>';
+  h+='<section><h3>What it is made of</h3><ul class="parts">'+t.parts.map(function(p){
+    var tag="";
+    if(g){ tag=p.proc==="remove"?'<em>Removed</em>':p.proc==="ghost"?'<em>'+esc(p.tag)+'</em>':'<em class="kept">Kept</em>'; }
+    return '<li><button class="part'+(g&&p.proc==="remove"?" gone":"")+'" data-k="'+p.key+'" aria-pressed="'+(state.hl===p.key)+'">'+
+      '<i style="background:'+p.color+'"></i><strong>'+esc(p.name)+'</strong>'+(tag||"<span></span>")+
+      '<span class="d">'+esc(p.d)+'</span></button></li>';
+  }).join("")+'</ul><p class="tip">Select a part to pick it out in the model. Select it again to show everything.</p></section>';
+  h+='<section><h3>How surgeons use it</h3><ul class="uses">'+t.uses.map(function(u){return "<li>"+esc(u)+"</li>"}).join("")+'</ul></section>';
+  card.innerHTML=h;
+  Array.prototype.forEach.call(card.querySelectorAll(".part"),function(b){
+    b.onclick=function(){var k=b.getAttribute("data-k");state.hl=state.hl===k?null:k;sync()};
+  });
+}
+function sync(){
+  var t=state.t;
+  if(state.hl&&state.graft){var p=t.parts.filter(function(p){return p.key===state.hl})[0];if(p&&p.proc==="remove")state.hl=null;}
+  TISSUES.forEach(function(x){$("tab-"+x.id).setAttribute("aria-current",x===t)});
+  $("mNative").setAttribute("aria-pressed",!state.graft);$("mGraft").setAttribute("aria-pressed",state.graft);
+  $("scale").textContent=t.scale;
+  renderCard();
+  if(gl)gl.apply();
+}
+function select(id,setHash){
+  var t=TISSUES.filter(function(x){return x.id===id})[0]||TISSUES[0];
+  if(t!==state.t){state.t=t;state.hl=null;}
+  if(setHash){try{history.replaceState(null,"","#"+t.id)}catch(e){location.hash=t.id}}
+  sync(); if(gl)gl.show(t);
+}
+$("mNative").onclick=function(){state.graft=false;sync()};
+$("mGraft").onclick=function(){state.graft=true;sync()};
+window.addEventListener("hashchange",function(){select(location.hash.slice(1))});
+
+/* ---------- 3D ---------- */
+var gl=null;
+try{ gl=initGL(); }catch(e){ gl=null; }
+if(!gl){ canvas.hidden=true; var n=document.createElement("div");n.className="nogl";
+  n.textContent="The 3D view needs WebGL, which is not available in this browser. The descriptions still work.";stage.appendChild(n); }
+select(location.hash.slice(1)||"dermis");
+
+function initGL(){
+  if(!window.THREE)return null;
+  var T=THREE;
+  var renderer=new T.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.outputEncoding=T.sRGBEncoding;
+  var scene=new T.Scene();
+  var camera=new T.PerspectiveCamera(38,1,.1,200);
+  scene.add(new T.HemisphereLight(0xffffff,0x2a2050,1.0));
+  var key=new T.DirectionalLight(0xffffff,1.1);camera.add(key);key.position.set(4,6,2);scene.add(camera);
+  var rim=new T.DirectionalLight(0xb9a4ff,.45);rim.position.set(-8,-4,-8);scene.add(rim);
+
+  var seed=7;function R(){seed|=0;seed=seed+0x6D2B79F5|0;var t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}
+  function rr(a,b){return a+R()*(b-a)}
+  function mat(color,o){o=o||{};var m=new T.MeshStandardMaterial({color:new T.Color(color).convertSRGBToLinear(),roughness:o.rough==null?.55:o.rough,metalness:0,side:o.side||T.FrontSide});
+    m.userData.base=o.opacity==null?1:o.opacity;return m}
+  var UP=new T.Vector3(0,1,0);
+  function fiber(a,b,wy,wx,r,m){
+    var d=b.clone().sub(a),side=new T.Vector3().crossVectors(d,UP).normalize();
+    var p1=R()*6.28,p2=R()*6.28,f1=rr(1,3.5),f2=rr(1,3.5),pts=[];
+    for(var i=0;i<=9;i++){var t=i/9,p=a.clone().lerp(b,t);
+      p.y+=Math.sin(t*f1*Math.PI+p1)*wy;p.addScaledVector(side,Math.sin(t*f2*Math.PI+p2)*wx);pts.push(p)}
+    return new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts),30,r,6,false),m);
+  }
+  // a fiber crossing a square slab of half-width h at height y, in a random horizontal direction
+  function across(h,y0,y1,wy,wx,r,m){
+    var y=rr(y0,y1),a,b;
+    if(R()<.5){a=new T.Vector3(-h,y,rr(-h,h));b=new T.Vector3(h,rr(y0,y1),rr(-h,h))}
+    else{a=new T.Vector3(rr(-h,h),y,-h);b=new T.Vector3(rr(-h,h),rr(y0,y1),h)}
+    return fiber(a,b,wy,wx,r,m);
+  }
+  function inst(geo,m,list){
+    var im=new T.InstancedMesh(geo,m,list.length),o=new T.Object3D();
+    list.forEach(function(p,i){o.position.copy(p.p);o.scale.copy(p.s||new T.Vector3(1,1,1));o.rotation.set(p.rx||0,p.ry||0,p.rz||0);o.updateMatrix();im.setMatrixAt(i,o.matrix)});
+    return im;
+  }
+  function Tissue(def){var root=new T.Group(),comps={};
+    def.parts.forEach(function(p){var g=new T.Group();root.add(g);comps[p.key]={key:p.key,proc:p.proc,group:g,mats:[]}});
+    return {root:root,comps:comps,add:function(k,obj,m){comps[k].group.add(obj);(Array.isArray(m)?m:[m]).forEach(function(x){if(comps[k].mats.indexOf(x)<0)comps[k].mats.push(x)})}};
+  }
+  var sph=new T.SphereGeometry(1,20,14);
+  function spindles(n,h,y0,y1){var body=[],nuc=[];
+    for(var i=0;i<n;i++){var p=new T.Vector3(rr(-h,h),rr(y0,y1),rr(-h,h)),ry=R()*6.28;
+      body.push({p:p,s:new T.Vector3(.62,.13,.17),ry:ry});nuc.push({p:p,s:new T.Vector3(.2,.1,.12),ry:ry})}
+    return {body:body,nuc:nuc};
+  }
+  function addSpindles(t,k,n,h,y0,y1){
+    var s=spindles(n,h,y0,y1),mb=mat(C.cell,{opacity:.6}),mn=mat(C.nucleus);
+    t.add(k,inst(sph,mn,s.nuc),mn);t.add(k,inst(sph,mb,s.body),mb);
+  }
+  function slab(h,y,th,m){var s=new T.Mesh(new T.BoxGeometry(h*2,th,h*2),m);s.position.y=y;return s}
+
+  var builders={
+   dermis:function(def){var t=Tissue(def),h=4,i,m;
+     m=mat(C.membrane,{opacity:.8,side:T.DoubleSide});
+     var g=new T.PlaneGeometry(8,8,48,48);g.rotateX(-Math.PI/2);var pos=g.attributes.position;
+     for(i=0;i<pos.count;i++){pos.setY(i,2.75+.32*Math.sin(pos.getX(i)*1.7)*Math.cos(pos.getZ(i)*1.7))}
+     g.computeVertexNormals();t.add("bm",new T.Mesh(g,m),m);
+     m=mat(C.fine);for(i=0;i<46;i++)t.add("pap",across(h,1.5,2.3,.12,.35,rr(.035,.06),m),m);
+     m=mat(C.collagen);for(i=0;i<44;i++)t.add("ret",across(h,-2.6,1.2,.3,.45,rr(.11,.22),m),m);
+     m=mat(C.elastin,{rough:.35});for(i=0;i<20;i++)t.add("ela",across(h,-2.6,2.2,.5,.6,.032,m),m);
+     addSpindles(t,"fib",26,3.6,-2.5,2.1);
+     m=mat(C.vessel,{rough:.4});
+     t.add("ves",fiber(new T.Vector3(-4,-1.2,-1.5),new T.Vector3(4,.2,1.8),.35,.5,.2,m),m);
+     t.add("ves",fiber(new T.Vector3(1.2,-2.2,-4),new T.Vector3(-1.6,.8,4),.3,.5,.15,m),m);
+     t.add("ves",fiber(new T.Vector3(.2,-.4,.3),new T.Vector3(1.4,2.2,1.2),.1,.2,.08,m),m);
+     return t},
+   adipose:function(def){var t=Tissue(def),cells=[],tries=0,i;
+     while(cells.length<38&&tries++<6000){
+       var p=new T.Vector3(rr(-4.6,4.6),rr(-3.2,3.2),rr(-3.8,3.8));
+       if((p.x*p.x)/21.2+(p.y*p.y)/10.3+(p.z*p.z)/14.5>1)continue;
+       var r=rr(.78,1.18),ok=true;
+       for(i=0;i<cells.length;i++)if(cells[i].p.distanceTo(p)<(cells[i].r+r)*.92){ok=false;break}
+       if(ok)cells.push({p:p,r:r});
+     }
+     function onSurf(c,k){var d=new T.Vector3(rr(-1,1),rr(-1,1),rr(-1,1)).normalize();return {p:c.p.clone().addScaledVector(d,c.r*k),d:d}}
+     var ml=mat(C.lipid,{opacity:.92,rough:.25}),mn=mat(C.nucleus),mb=new T.LineBasicMaterial({color:new T.Color(C.collagen).convertSRGBToLinear()});mb.userData.base=.9;
+     var lip=[],nuc=[];
+     cells.forEach(function(c){
+       lip.push({p:c.p,s:new T.Vector3(c.r*.95,c.r*.95,c.r*.95)});
+       var s=onSurf(c,.9),o=new T.Object3D();o.position.copy(s.p);o.lookAt(c.p);
+       nuc.push({p:s.p,s:new T.Vector3(.24,.24,.08),rx:o.rotation.x,ry:o.rotation.y,rz:o.rotation.z});
+       var w=new T.LineSegments(new T.WireframeGeometry(new T.IcosahedronGeometry(c.r,1)),mb);
+       w.position.copy(c.p);w.rotation.set(R()*3,R()*3,0);t.add("bas",w,mb);
+     });
+     t.add("adi",inst(sph,ml,lip),ml);t.add("adi",inst(sph,mn,nuc),mn);
+     var mv=mat(C.vessel,{rough:.4}),sorted=cells.slice().sort(function(a,b){return a.p.x-b.p.x});
+     for(var k=0;k<4;k++){var pts=[];for(i=k;i<sorted.length;i+=5)pts.push(onSurf(sorted[i],1.08).p);
+       if(pts.length>2)t.add("cap",new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts),90,.065,6,false),mv),mv)}
+     var ms=mat(C.cell),st=[];
+     for(i=0;i<34;i++){var c=cells[Math.floor(R()*cells.length)];st.push({p:onSurf(c,1.1).p,s:new T.Vector3(.14,.14,.14)})}
+     t.add("str",inst(sph,ms,st),ms);
+     return t},
+   amnion:function(def){var t=Tissue(def),h=4,i,j,m;
+     var me=mat(C.epi,{rough:.45}),mn=mat(C.nucleus),box=[],nuc=[],n=11,s=8/n;
+     for(i=0;i<n;i++)for(j=0;j<n;j++){var hh=rr(.55,.72),x=-4+s*(i+.5),z=-4+s*(j+.5);
+       box.push({p:new T.Vector3(x,1.75+hh/2,z),s:new T.Vector3(s*.9,hh,s*.9)});
+       nuc.push({p:new T.Vector3(x,1.75+hh+.01,z),s:new T.Vector3(.17,.07,.17)})}
+     t.add("epi",inst(new T.BoxGeometry(1,1,1),me,box),me);t.add("epi",inst(sph,mn,nuc),mn);
+     m=mat(C.membrane);t.add("bm",slab(h,1.62,.16,m),m);
+     m=mat(C.collagen);for(i=0;i<80;i++)t.add("com",across(h,.85,1.45,.04,.2,rr(.04,.06),m),m);
+     m=mat(C.fine);for(i=0;i<34;i++)t.add("fibL",across(h,-.45,.6,.16,.45,rr(.045,.07),m),m);
+     addSpindles(t,"fib",16,3.6,-.4,.55);
+     var mg=mat(C.gel,{opacity:.28,rough:.2}),mf=mat(C.gel);
+     t.add("spo",slab(h,-1.25,1.1,mg),mg);
+     for(i=0;i<16;i++)t.add("spo",across(h,-1.65,-.85,.22,.7,.03,mf),mf);
+     return t},
+   chorion:function(def){var t=Tissue(def),h=4,i,j,k,m;
+     m=mat(C.collagen);for(i=0;i<62;i++)t.add("ret",across(h,.55,2.5,.22,.5,rr(.06,.11),m),m);
+     addSpindles(t,"fib",16,3.6,.65,2.4);
+     m=mat(C.membrane);t.add("bm",slab(h,.32,.16,m),m);
+     var mt=mat(C.tropho,{rough:.45}),mn=mat(C.nucleus),cells=[],nuc=[],n=9,s=8/n;
+     for(k=0;k<3;k++)for(i=0;i<n;i++)for(j=0;j<n;j++){
+       var p=new T.Vector3(-4+s*(i+.5)+rr(-.12,.12)+(k%2?.2:0),-.2-k*.72+rr(-.08,.08),-4+s*(j+.5)+rr(-.12,.12)+(k%2?.2:0)),r=rr(.36,.44);
+       cells.push({p:p,s:new T.Vector3(r,r*.9,r)});
+       if(k===2)nuc.push({p:p.clone().setY(p.y-r*.85),s:new T.Vector3(.16,.06,.16)})}
+     t.add("tro",inst(sph,mt,cells),mt);t.add("tro",inst(sph,mn,nuc),mn);
+     t.root.position.y=-.3;
+     return t}
+  };
+
+  var built={},cur=null;
+  var orbit={th:.7,ph:1.15,rad:17,home:17,auto:!window.matchMedia("(prefers-reduced-motion: reduce)").matches,drag:false};
+  function show(def){
+    if(cur)scene.remove(cur.root);
+    seed=def.id.length*97+def.id.charCodeAt(0);
+    cur=built[def.id]||(built[def.id]=builders[def.id](def));
+    scene.add(cur.root);orbit.home=def.cam;orbit.rad=fit(def.cam);apply();
+  }
+  function fit(r){return camera.aspect<1?r*(1.05/Math.max(camera.aspect,.55)):r}
+  function apply(){
+    if(!cur)return;
+    Object.keys(cur.comps).forEach(function(k){var c=cur.comps[k],f=1;
+      c.group.visible=!(state.graft&&c.proc==="remove");
+      if(state.graft&&c.proc==="ghost")f=.16;
+      if(state.hl&&state.hl!==k)f*=.07;
+      c.mats.forEach(function(m){var o=m.userData.base*f;m.opacity=o;m.transparent=o<.999;m.depthWrite=o>.5;m.needsUpdate=true});
+    });
+  }
+  function resize(){var w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();orbit.rad=fit(orbit.home)}
+  if(window.ResizeObserver)new ResizeObserver(resize).observe(stage);else window.addEventListener("resize",resize);
+  resize();
+
+  /* orbit controls */
+  var ptrs={},pinch=0;
+  function clamp(){orbit.ph=Math.max(.15,Math.min(Math.PI-.15,orbit.ph));orbit.rad=Math.max(6,Math.min(40,orbit.rad))}
+  canvas.addEventListener("pointerdown",function(e){ptrs[e.pointerId]={x:e.clientX,y:e.clientY};orbit.drag=true;try{canvas.setPointerCapture(e.pointerId)}catch(_){}});
+  canvas.addEventListener("pointermove",function(e){var p=ptrs[e.pointerId];if(!p)return;var ids=Object.keys(ptrs);
+    if(ids.length===1){orbit.th-=(e.clientX-p.x)*.008;orbit.ph-=(e.clientY-p.y)*.008}
+    p.x=e.clientX;p.y=e.clientY;
+    if(ids.length===2){var a=ptrs[ids[0]],b=ptrs[ids[1]],d=Math.hypot(a.x-b.x,a.y-b.y);if(pinch)orbit.rad*=pinch/d;pinch=d}
+    clamp()});
+  function up(e){delete ptrs[e.pointerId];pinch=0;if(!Object.keys(ptrs).length)orbit.drag=false}
+  canvas.addEventListener("pointerup",up);canvas.addEventListener("pointercancel",up);
+  canvas.addEventListener("wheel",function(e){e.preventDefault();orbit.rad*=Math.exp(e.deltaY*.0012);clamp()},{passive:false});
+  canvas.addEventListener("keydown",function(e){var k=e.key,hit=true;
+    if(k==="ArrowLeft")orbit.th-=.12;else if(k==="ArrowRight")orbit.th+=.12;else if(k==="ArrowUp")orbit.ph-=.1;else if(k==="ArrowDown")orbit.ph+=.1;
+    else if(k==="+"||k==="=")orbit.rad*=.9;else if(k==="-")orbit.rad*=1.1;else hit=false;
+    if(hit){e.preventDefault();clamp()}});
+  var spin=$("spin");
+  function spinLabel(){spin.textContent=orbit.auto?"Pause":"Rotate";spin.setAttribute("aria-pressed",orbit.auto)}
+  spin.onclick=function(){orbit.auto=!orbit.auto;spinLabel()};spinLabel();
+  $("reset").onclick=function(){orbit.th=.7;orbit.ph=1.15;orbit.rad=fit(orbit.home)};
+
+  var last=performance.now();
+  function frame(now){var dt=Math.min(.05,(now-last)/1000);last=now;
+    if(orbit.auto&&!orbit.drag)orbit.th+=dt*.16;
+    var s=Math.sin(orbit.ph);
+    camera.position.set(orbit.rad*s*Math.sin(orbit.th),orbit.rad*Math.cos(orbit.ph),orbit.rad*s*Math.cos(orbit.th));
+    camera.lookAt(0,0,0);renderer.render(scene,camera);requestAnimationFrame(frame)}
+  requestAnimationFrame(frame);
+  return {show:show,apply:apply};
+}
+})();
+</script>
